@@ -1,0 +1,11 @@
+version = 0.1
+[default]
+[default.deploy]
+[default.deploy.parameters]
+stack_name = "wildo-test"
+s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-1swjiklvh4vdk"
+s3_prefix = "wildo-test"
+region = "us-east-1"
+capabilities = "CAPABILITY_NAMED_IAM"
+image_repositories = []
+parameter_overrides = "AuthToken=\"MySuperSecretToken!!UpWork01\""

@@ -1,0 +1,111 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  image-processor
+  API Gateway connected to a lambda function. The lambda function takes a jpg file and returns some text string in a JSON structure
+
+
+Globals:
+  Function:
+    Timeout:    29 # Max timeout set to this value because API Gateway can wait up to 29 for sync calls
+    MemorySize: 256
+    Architectures:
+      - x86_64
+    Runtime: python3.8
+
+Parameters:
+  AuthToken:
+    Type: String
+    Default: token # TODO: Make sure to provide using parameters override when deploying
+
+Resources:
+
+  ImageProcessorApiRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: ApiGatewayInvokeLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !GetAtt TokenAuthorizer.Arn
+              - Effect: Allow
+                Action:
+                  - lambda:InvokeFunction
+                Resource: !GetAtt ImageProcessor.Arn
+  
+  # Defining HttpApi resource
+  ImageProcessorApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      Name: image-processor-api
+      StageName: dev
+      Description: API to process image information
+      CorsConfiguration:
+        AllowOrigins:
+          - "*"
+        AllowHeaders:
+          - "*"
+        AllowMethods:
+          - POST
+        MaxAge: 600
+      Auth:
+        DefaultAuthorizer: TokenAuthorizer
+        Authorizers:
+          TokenAuthorizer:
+            FunctionArn: !GetAtt TokenAuthorizer.Arn
+            FunctionInvokeRole: !GetAtt ImageProcessorApiRole.Arn
+            Identity:
+              Headers:
+                - Authorization
+              ReauthorizeEvery: 300
+            AuthorizerPayloadFormatVersion: 2.0
+            EnableSimpleResponses: true
+
+  TokenAuthorizer:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: authorizer.lambda_handler
+      FunctionName: image-processor-token-authorizer
+      Environment:
+        Variables:
+          AUTHORIZATION_SECRET_TOKEN: !Ref AuthToken
+
+
+  ImageProcessor:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: image_processor.lambda_handler
+      FunctionName: image-processor
+      Events:
+        ProcessImage:
+          Type: HttpApi   # Cheaper and Faster than Api (RestApi)
+          Properties:
+            ApiId: !Ref ImageProcessorApi
+            Path: /process-image
+            Method: post
+
+Outputs:
+  ImageProcessorApi:
+    Description: API Gateway endpoint URL for Prod stage for image-processor function
+    Value: !Sub "https://${ImageProcessorApi}.execute-api.${AWS::Region}.amazonaws.com/dev/process-image"
+  ImageProcessor:
+    Description: Image processor lambda arn
+    Value: !GetAtt ImageProcessor.Arn
+  ImageProcessorIamRole:
+    Description: Implicit IAM Role created for image-processor function
+    Value: !GetAtt ImageProcessorRole.Arn
